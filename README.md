@@ -49,11 +49,11 @@ Claude Code  ──── MCP (stdio) ────►  Python Bridge  ───�
 
 ## Features
 
-100+ commands across 11 categories:
+100+ commands across 11 categories (104 total):
 
 | Category | Commands | Description |
 |---|---|---|
-| **Editor** | 18 | Actor spawn/delete/transform, viewport, screenshot |
+| **Editor** | 19 | Actor spawn/delete/transform, open level, viewport, screenshot |
 | **Blueprint** | 12 | Create BP, add components/variables, compile |
 | **Blueprint Node** | 15 | Event/function/branch nodes, pin connections |
 | **Material** | 11 | Create materials, add expressions, connect nodes |
