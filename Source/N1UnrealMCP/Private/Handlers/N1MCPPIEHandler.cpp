@@ -109,10 +109,25 @@ TSharedPtr<FJsonObject> FN1MCPPIEHandler::HandleExecuteConsoleCommand(const TSha
 	if (!GEditor || !GEditor->PlayWorld)
 		return ErrorResponse(TEXT("PIE_NOT_RUNNING"), TEXT("PIE is not running"));
 
-	GEditor->PlayWorld->Exec(GEditor->PlayWorld, *Command);
+	// PlayerController 경유로 실행 (slomo 등 서버 커맨드 지원)
+	UWorld* PlayWorld = GEditor->PlayWorld;
+	bool bExecuted = false;
+
+	APlayerController* PC = PlayWorld->GetFirstPlayerController();
+	if (PC)
+	{
+		PC->ConsoleCommand(Command);
+		bExecuted = true;
+	}
+	else
+	{
+		// PC가 없으면 World->Exec 폴백
+		PlayWorld->Exec(PlayWorld, *Command);
+		bExecuted = true;
+	}
 
 	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
-	Data->SetBoolField(TEXT("success"), true);
+	Data->SetBoolField(TEXT("success"), bExecuted);
 	Data->SetStringField(TEXT("command"), Command);
 	return SuccessResponse(Data);
 }
