@@ -11,6 +11,10 @@
   "IsBetaVersion": false,
   "Installed": false,
   "SupportedTargetPlatforms": ["Win64", "Mac", "Linux"],
+  "Plugins": [
+    { "Name": "EditorScriptingUtilities", "Enabled": true },
+    { "Name": "EnhancedInput", "Enabled": true }
+  ],
   "Modules": [
     {
       "Name": "N1UnrealMCP",
