@@ -13,6 +13,7 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/FileHelper.h"
 #include "ImageUtils.h"
+#include "FileHelpers.h"
 #include "UnrealClient.h"
 
 FN1MCPEditorHandler::FN1MCPEditorHandler(FN1MCPCommandRegistry& InRegistry)
@@ -106,6 +107,11 @@ void FN1MCPEditorHandler::RegisterCommands()
 	RegisterCommand(TEXT("take_screenshot"),
 		TEXT("뷰포트 스크린샷 캡처"), nullptr,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleTakeScreenshot(P); });
+
+	RegisterCommand(TEXT("open_level"),
+		TEXT("레벨(맵) 열기"), nullptr,
+		false, false, false, 30000,
+		[this](const TSharedPtr<FJsonObject>& P) { return HandleOpenLevel(P); });
 }
 
 TSharedPtr<FJsonObject> FN1MCPEditorHandler::ActorToJson(AActor* Actor, bool bDetailed)
@@ -722,5 +728,44 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleTakeScreenshot(const TSharedP
 	Data->SetStringField(TEXT("file_path"), Filename);
 	Data->SetNumberField(TEXT("width"), Width);
 	Data->SetNumberField(TEXT("height"), Height);
+	return SuccessResponse(Data);
+}
+
+TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleOpenLevel(const TSharedPtr<FJsonObject>& Params)
+{
+	FString LevelPath;
+	if (!Params || !Params->TryGetStringField(TEXT("level_path"), LevelPath))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'level_path' required"));
+
+	// 짧은 경로 지원: EditorStartupLevel → /Game/Level/EditorStartupLevel
+	if (!LevelPath.StartsWith(TEXT("/")))
+	{
+		LevelPath = TEXT("/Game/Level/") + LevelPath;
+	}
+
+	// .umap 확장자 제거
+	LevelPath.RemoveFromEnd(TEXT(".umap"));
+
+	FString MapFilePath;
+	if (!FPackageName::DoesPackageExist(LevelPath, &MapFilePath))
+	{
+		// /Game/Maps/ 경로도 시도
+		FString AltPath = LevelPath.Replace(TEXT("/Game/Level/"), TEXT("/Game/Maps/"));
+		if (FPackageName::DoesPackageExist(AltPath, &MapFilePath))
+		{
+			LevelPath = AltPath;
+		}
+		else
+		{
+			return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
+				FString::Printf(TEXT("Level not found: '%s'"), *LevelPath));
+		}
+	}
+
+	FEditorFileUtils::LoadMap(LevelPath);
+
+	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+	Data->SetBoolField(TEXT("success"), true);
+	Data->SetStringField(TEXT("level"), LevelPath);
 	return SuccessResponse(Data);
 }

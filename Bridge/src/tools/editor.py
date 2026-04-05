@@ -176,3 +176,9 @@ async def take_screenshot(filename: str | None = None) -> str:
     params: dict[str, Any] = {}
     if filename: params["filename"] = filename
     return await _cmd("take_screenshot", params)
+
+
+@mcp.tool()
+async def open_level(level_path: str) -> str:
+    """레벨(맵)을 엽니다. 풀 경로(/Game/Level/MapName) 또는 짧은 이름(MapName) 가능."""
+    return await _cmd("open_level", {"level_path": level_path}, timeout_ms=30000)

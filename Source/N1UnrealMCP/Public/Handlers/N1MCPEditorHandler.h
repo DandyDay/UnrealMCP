@@ -33,6 +33,7 @@ private:
 	// 에디터 유틸
 	TSharedPtr<FJsonObject> HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+	TSharedPtr<FJsonObject> HandleOpenLevel(const TSharedPtr<FJsonObject>& Params);
 
 	// 액터를 JSON으로 직렬화
 	TSharedPtr<FJsonObject> ActorToJson(AActor* Actor, bool bDetailed = true);
