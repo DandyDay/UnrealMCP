@@ -7,6 +7,7 @@
 #include "IAssetTools.h"
 #include "ObjectTools.h"
 #include "AutomatedAssetImportData.h"
+#include "AssetImportTask.h"
 #include "FileHelpers.h"
 #include "PackageTools.h"
 #include "UObject/SavePackage.h"
@@ -193,13 +194,19 @@ TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleImportAsset(const TSharedPtr<F
 
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 
-	// ImportAssetsAutomated: 다이얼로그 없이 자동 임포트 (GameThread 블록 방지)
-	UAutomatedAssetImportData* ImportData = NewObject<UAutomatedAssetImportData>();
-	ImportData->Filenames.Add(SourceFile);
-	ImportData->DestinationPath = DestPath;
-	ImportData->bReplaceExisting = true;
+	// UAssetImportTask 사용: Interchange TaskGraph 재귀 방지
+	UAssetImportTask* ImportTask = NewObject<UAssetImportTask>();
+	ImportTask->Filename = SourceFile;
+	ImportTask->DestinationPath = DestPath;
+	ImportTask->bReplaceExisting = true;
+	ImportTask->bAutomated = true;
+	ImportTask->bSave = false;
 
-	TArray<UObject*> ImportedAssets = AssetTools.ImportAssetsAutomated(ImportData);
+	TArray<UAssetImportTask*> Tasks;
+	Tasks.Add(ImportTask);
+	AssetTools.ImportAssetTasks(Tasks);
+
+	TArray<UObject*> ImportedAssets = ImportTask->GetObjects();
 
 	if (ImportedAssets.Num() == 0)
 		return ErrorResponse(TEXT("IMPORT_FAILED"),

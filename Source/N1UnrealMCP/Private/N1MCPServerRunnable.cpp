@@ -8,6 +8,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Async/Async.h"
+#include "Containers/Ticker.h"
 
 // ═══════════════════════════════════════════════════════════════
 // FN1MCPClientRunnable — 개별 클라이언트 세션 스레드
@@ -130,22 +131,26 @@ void FN1MCPClientRunnable::ProcessMessage(const FString& Message)
 	TFuture<TSharedPtr<FJsonObject>> Future = Promise->GetFuture();
 	TSharedPtr<FThreadSafeBool> bCancelled = MakeShared<FThreadSafeBool>(false);
 
-	AsyncTask(ENamedThreads::GameThread, [this, Command, Params, Promise, bCancelled]()
-	{
-		// 타임아웃으로 취소된 경우 — 커맨드 실행 스킵, Promise만 해소
-		if (*bCancelled)
+	// FTSTicker로 GameThread 디스패치 — TaskGraph 컨텍스트 밖에서 실행되므로
+	// Interchange 등 내부적으로 TaskGraph를 쓰는 시스템과 재귀 충돌 방지
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda(
+		[this, Command, Params, Promise, bCancelled](float) -> bool
 		{
-			TSharedPtr<FJsonObject> Cancelled = MakeShared<FJsonObject>();
-			Cancelled->SetStringField(TEXT("status"), TEXT("error"));
-			Cancelled->SetStringField(TEXT("error_code"), TEXT("TIMEOUT"));
-			Cancelled->SetStringField(TEXT("error"), TEXT("Cancelled due to timeout"));
-			Promise->SetValue(Cancelled);
-			return;
-		}
+			if (*bCancelled)
+			{
+				TSharedPtr<FJsonObject> Cancelled = MakeShared<FJsonObject>();
+				Cancelled->SetStringField(TEXT("status"), TEXT("error"));
+				Cancelled->SetStringField(TEXT("error_code"), TEXT("TIMEOUT"));
+				Cancelled->SetStringField(TEXT("error"), TEXT("Cancelled due to timeout"));
+				Promise->SetValue(Cancelled);
+				return false;
+			}
 
-		TSharedPtr<FJsonObject> CmdResult = OnCommandReceived.Execute(Command, Params);
-		Promise->SetValue(CmdResult);
-	});
+			TSharedPtr<FJsonObject> CmdResult = OnCommandReceived.Execute(Command, Params);
+			Promise->SetValue(CmdResult);
+			return false; // one-shot
+		}
+	));
 
 	// WaitFor로 타임아웃 처리
 	TSharedPtr<FJsonObject> Result;
