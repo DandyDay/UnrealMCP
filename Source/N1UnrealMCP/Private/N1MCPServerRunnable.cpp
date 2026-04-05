@@ -124,13 +124,25 @@ void FN1MCPClientRunnable::ProcessMessage(const FString& Message)
 		TimeoutMs = static_cast<int32>(JsonObj->GetNumberField(TEXT("timeout_ms")));
 	}
 
-	// GameThread에서 커맨드 실행
+	// GameThread에서 커맨드 실행 — 취소 플래그로 데드락 방지
 	TSharedPtr<TPromise<TSharedPtr<FJsonObject>>> Promise =
 		MakeShared<TPromise<TSharedPtr<FJsonObject>>>();
 	TFuture<TSharedPtr<FJsonObject>> Future = Promise->GetFuture();
+	TSharedPtr<FThreadSafeBool> bCancelled = MakeShared<FThreadSafeBool>(false);
 
-	AsyncTask(ENamedThreads::GameThread, [this, Command, Params, Promise]()
+	AsyncTask(ENamedThreads::GameThread, [this, Command, Params, Promise, bCancelled]()
 	{
+		// 타임아웃으로 취소된 경우 — 커맨드 실행 스킵, Promise만 해소
+		if (*bCancelled)
+		{
+			TSharedPtr<FJsonObject> Cancelled = MakeShared<FJsonObject>();
+			Cancelled->SetStringField(TEXT("status"), TEXT("error"));
+			Cancelled->SetStringField(TEXT("error_code"), TEXT("TIMEOUT"));
+			Cancelled->SetStringField(TEXT("error"), TEXT("Cancelled due to timeout"));
+			Promise->SetValue(Cancelled);
+			return;
+		}
+
 		TSharedPtr<FJsonObject> CmdResult = OnCommandReceived.Execute(Command, Params);
 		Promise->SetValue(CmdResult);
 	});
@@ -143,11 +155,17 @@ void FN1MCPClientRunnable::ProcessMessage(const FString& Message)
 	}
 	else
 	{
+		// 타임아웃 — 취소 플래그 설정. GameThread 작업이 나중에 실행되면 스킵됨.
+		*bCancelled = true;
+
 		Result = MakeShared<FJsonObject>();
 		Result->SetStringField(TEXT("status"), TEXT("error"));
 		Result->SetStringField(TEXT("error_code"), TEXT("TIMEOUT"));
 		Result->SetStringField(TEXT("error"),
 			FString::Printf(TEXT("Command '%s' timed out after %d ms"), *Command, TimeoutMs));
+
+		UE_LOG(LogN1MCP, Warning, TEXT("Client %d: Command '%s' timed out after %d ms"),
+			ClientId, *Command, TimeoutMs);
 	}
 
 	Result->SetStringField(TEXT("type"), TEXT("response"));

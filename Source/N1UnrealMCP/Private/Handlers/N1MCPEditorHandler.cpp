@@ -207,10 +207,14 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleFindActorsByName(const TShare
 	{
 		AActor* Actor = *It;
 
-		if (!NamePattern.IsEmpty() &&
-			!Actor->GetActorLabel().Contains(NamePattern) &&
-			!Actor->GetName().Contains(NamePattern))
-			continue;
+		if (!NamePattern.IsEmpty())
+		{
+			// 와일드카드(*) 지원: *를 제거하고 Contains 매칭
+			FString CleanPattern = NamePattern.Replace(TEXT("*"), TEXT(""));
+			if (!Actor->GetActorLabel().Contains(CleanPattern) &&
+				!Actor->GetName().Contains(CleanPattern))
+				continue;
+		}
 
 		if (!ClassFilter.IsEmpty() &&
 			!Actor->GetClass()->GetName().Contains(ClassFilter))

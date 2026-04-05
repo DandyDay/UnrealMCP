@@ -6,6 +6,7 @@
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "ObjectTools.h"
+#include "AutomatedAssetImportData.h"
 #include "FileHelpers.h"
 #include "PackageTools.h"
 #include "UObject/SavePackage.h"
@@ -110,6 +111,13 @@ TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleGetAssetInfo(const TSharedPtr<
 	if (!Params || !Params->TryGetStringField(TEXT("asset_path"), AssetPath))
 		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'asset_path' required"));
 
+	// 짧은 경로 자동 보정: /Game/Path/Name → /Game/Path/Name.Name
+	if (!AssetPath.Contains(TEXT(".")))
+	{
+		FString AssetName = FPackageName::GetShortName(AssetPath);
+		AssetPath = AssetPath + TEXT(".") + AssetName;
+	}
+
 	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 	FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(AssetPath));
 
@@ -185,10 +193,13 @@ TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleImportAsset(const TSharedPtr<F
 
 	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 
-	TArray<FString> Files;
-	Files.Add(SourceFile);
+	// ImportAssetsAutomated: 다이얼로그 없이 자동 임포트 (GameThread 블록 방지)
+	UAutomatedAssetImportData* ImportData = NewObject<UAutomatedAssetImportData>();
+	ImportData->Filenames.Add(SourceFile);
+	ImportData->DestinationPath = DestPath;
+	ImportData->bReplaceExisting = true;
 
-	TArray<UObject*> ImportedAssets = AssetTools.ImportAssets(Files, DestPath);
+	TArray<UObject*> ImportedAssets = AssetTools.ImportAssetsAutomated(ImportData);
 
 	if (ImportedAssets.Num() == 0)
 		return ErrorResponse(TEXT("IMPORT_FAILED"),
@@ -276,14 +287,12 @@ TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleDeleteAsset(const TSharedPtr<F
 		return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
 			FString::Printf(TEXT("Asset not found: '%s'"), *AssetPath));
 
-	bool bForce = false;
-	if (Params->HasField(TEXT("force")))
-		bForce = Params->GetBoolField(TEXT("force"));
-
+	// MCP에서는 항상 다이얼로그 없이 삭제 (GameThread 블록 방지)
 	TArray<UObject*> AssetsToDelete;
 	AssetsToDelete.Add(Asset);
 
-	int32 Deleted = ObjectTools::DeleteObjects(AssetsToDelete, !bForce);
+	// ForceDeleteObjects는 참조 확인 다이얼로그를 건너뜀
+	int32 Deleted = ObjectTools::ForceDeleteObjects(AssetsToDelete, false);
 
 	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
 	Data->SetBoolField(TEXT("success"), Deleted > 0);

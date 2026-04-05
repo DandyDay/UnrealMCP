@@ -466,11 +466,11 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::HandleAddPureMathNode(const 
 
 	// 수학 연산을 KismetMathLibrary에서 검색
 	FString FuncName = Operation;
-	// 일반적인 매핑
-	if (Operation == TEXT("Add")) FuncName = TEXT("Add_FloatFloat");
-	else if (Operation == TEXT("Subtract")) FuncName = TEXT("Subtract_FloatFloat");
-	else if (Operation == TEXT("Multiply")) FuncName = TEXT("Multiply_FloatFloat");
-	else if (Operation == TEXT("Divide")) FuncName = TEXT("Divide_FloatFloat");
+	// 일반적인 매핑 (UE 5.7: Float → Double)
+	if (Operation == TEXT("Add")) FuncName = TEXT("Add_DoubleDouble");
+	else if (Operation == TEXT("Subtract")) FuncName = TEXT("Subtract_DoubleDouble");
+	else if (Operation == TEXT("Multiply")) FuncName = TEXT("Multiply_DoubleDouble");
+	else if (Operation == TEXT("Divide")) FuncName = TEXT("Divide_DoubleDouble");
 
 	UFunction* Func = UKismetMathLibrary::StaticClass()->FindFunctionByName(FName(*FuncName));
 	if (!Func)
@@ -536,7 +536,7 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::HandleAddMacroNode(const TSh
 	UEdGraph* Graph = FindEventGraph(BP);
 	if (!Graph) return ErrorResponse(TEXT("INTERNAL_ERROR"), TEXT("No event graph found"));
 
-	// 매크로 그래프 검색
+	// 매크로 그래프 검색: 1) 블루프린트 로컬 매크로 → 2) 엔진 매크로 라이브러리
 	UEdGraph* MacroGraph = nullptr;
 	for (UEdGraph* MG : BP->MacroGraphs)
 	{
@@ -546,9 +546,32 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::HandleAddMacroNode(const TSh
 			break;
 		}
 	}
+	// 로컬에서 못 찾으면 엔진 매크로 라이브러리(StandardMacros 등) 검색
+	if (!MacroGraph)
+	{
+		TArray<FString> MacroLibPaths = {
+			TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros")
+		};
+		for (const FString& LibPath : MacroLibPaths)
+		{
+			UBlueprint* MacroLib = LoadObject<UBlueprint>(nullptr, *LibPath);
+			if (MacroLib)
+			{
+				for (UEdGraph* MG : MacroLib->MacroGraphs)
+				{
+					if (MG->GetName() == MacroName)
+					{
+						MacroGraph = MG;
+						break;
+					}
+				}
+				if (MacroGraph) break;
+			}
+		}
+	}
 	if (!MacroGraph)
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
-			FString::Printf(TEXT("Macro '%s' not found in blueprint"), *MacroName));
+			FString::Printf(TEXT("Macro '%s' not found in blueprint or engine libraries"), *MacroName));
 
 	FVector2D Pos = GetPosition(Params);
 	FScopedTransaction Transaction(FText::FromString(TEXT("N1UnrealMCP: add_macro_node")));
