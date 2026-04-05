@@ -86,13 +86,15 @@ async def spawn_actor(
     location: list[float] | None = None,
     rotation: list[float] | None = None,
     scale: list[float] | None = None,
+    static_mesh: str | None = None,
 ) -> str:
-    """네이티브 클래스로 액터를 스폰합니다. class_path 예: PointLight, StaticMeshActor"""
+    """네이티브 클래스로 액터를 스폰합니다. class_path 예: PointLight, StaticMeshActor. StaticMeshActor의 경우 static_mesh로 메쉬 경로 지정 (예: /Engine/BasicShapes/Cube.Cube)"""
     params: dict[str, Any] = {"class_path": class_path}
     if name: params["name"] = name
     if location: params["location"] = location
     if rotation: params["rotation"] = rotation
     if scale: params["scale"] = scale
+    if static_mesh: params["static_mesh"] = static_mesh
     return await _cmd("spawn_actor", params)
 
 

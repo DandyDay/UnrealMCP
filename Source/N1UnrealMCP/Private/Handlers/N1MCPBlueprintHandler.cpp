@@ -362,6 +362,15 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintHandler::HandleSetComponentProperty(const
 		IntProp->SetPropertyValue(PropAddr, static_cast<int32>(Value->AsNumber()));
 	else if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
 		StrProp->SetPropertyValue(PropAddr, Value->AsString());
+	else if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop))
+	{
+		FString AssetPath = Value->AsString();
+		UObject* LoadedObj = StaticLoadObject(ObjProp->PropertyClass, nullptr, *AssetPath);
+		if (!LoadedObj)
+			return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
+				FString::Printf(TEXT("Asset '%s' not found"), *AssetPath));
+		ObjProp->SetObjectPropertyValue(PropAddr, LoadedObj);
+	}
 	else
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
 			FString::Printf(TEXT("Unsupported property type for '%s'"), *PropName));

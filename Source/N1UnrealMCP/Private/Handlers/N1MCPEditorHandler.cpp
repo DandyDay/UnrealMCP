@@ -7,6 +7,8 @@
 #include "ScopedTransaction.h"
 #include "Selection.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Light.h"
 #include "Camera/CameraActor.h"
 #include "Engine/Blueprint.h"
@@ -372,6 +374,15 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSetActorProperty(const TShare
 		StrProp->SetPropertyValue(PropAddr, Value->AsString());
 	else if (FNameProperty* NameProp = CastField<FNameProperty>(Prop))
 		NameProp->SetPropertyValue(PropAddr, FName(*Value->AsString()));
+	else if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop))
+	{
+		FString AssetPath = Value->AsString();
+		UObject* LoadedObj = StaticLoadObject(ObjProp->PropertyClass, nullptr, *AssetPath);
+		if (!LoadedObj)
+			return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
+				FString::Printf(TEXT("Asset '%s' not found"), *AssetPath));
+		ObjProp->SetObjectPropertyValue(PropAddr, LoadedObj);
+	}
 	else
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
 			FString::Printf(TEXT("Unsupported property type for '%s'"), *PropName));
@@ -441,7 +452,10 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSpawnActor(const TSharedPtr<F
 	FActorSpawnParameters SpawnParams;
 	FString Name;
 	if (Params->TryGetStringField(TEXT("name"), Name))
+	{
 		SpawnParams.Name = FName(*Name);
+		SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+	}
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	AActor* NewActor = World->SpawnActor<AActor>(ActorClass, Location, Rotation, SpawnParams);
@@ -450,6 +464,20 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSpawnActor(const TSharedPtr<F
 
 	if (Params->HasField(TEXT("scale")))
 		NewActor->SetActorScale3D(GetVectorFromJson(Params, TEXT("scale")));
+
+	// StaticMeshActor인 경우 static_mesh 파라미터로 메쉬 설정
+	FString MeshPath;
+	if (Params->TryGetStringField(TEXT("static_mesh"), MeshPath))
+	{
+		if (AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(NewActor))
+		{
+			UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath);
+			if (Mesh && SMActor->GetStaticMeshComponent())
+			{
+				SMActor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+			}
+		}
+	}
 
 	return SuccessResponse(ActorToJson(NewActor));
 }
@@ -480,7 +508,10 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSpawnBlueprintActor(const TSh
 	FActorSpawnParameters SpawnParams;
 	FString Name;
 	if (Params->TryGetStringField(TEXT("name"), Name))
+	{
 		SpawnParams.Name = FName(*Name);
+		SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+	}
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	AActor* NewActor = World->SpawnActor<AActor>(BPClass, Location, Rotation, SpawnParams);
