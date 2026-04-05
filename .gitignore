@@ -1,0 +1,30 @@
+# UE Build Artifacts
+**/Binaries/
+**/Intermediate/
+**/DerivedDataCache/
+**/Saved/
+
+# Python
+**/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+**/*.egg-info/
+**/uv.lock
+
+# IDE
+**/.vs/
+**/.idea/
+**/.vscode/
+*.suo
+*.user
+*.sln
+*.DotSettings*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log

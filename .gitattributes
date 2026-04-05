@@ -1,0 +1,23 @@
+# Auto-detect text files and normalize line endings to LF in repo
+* text=auto
+
+# C++ sources
+*.h text eol=lf
+*.cpp text eol=lf
+*.cs text eol=lf
+
+# Python
+*.py text eol=lf
+
+# Config/Data
+*.json text eol=lf
+*.toml text eol=lf
+*.uplugin text eol=lf
+*.md text eol=lf
+
+# Binary - no conversion
+*.uasset binary
+*.umap binary
+*.dll binary
+*.pdb binary
+*.exe binary
