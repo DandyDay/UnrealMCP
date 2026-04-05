@@ -102,6 +102,11 @@ void FN1MCPEditorHandler::RegisterCommands()
 		true, false, false, 10000,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleSetActorTags(P); });
 
+	RegisterCommand(TEXT("set_component_material"),
+		TEXT("액터 컴포넌트의 머티리얼 슬롯 설정"), nullptr,
+		true, false, false, 10000,
+		[this](const TSharedPtr<FJsonObject>& P) { return HandleSetComponentMaterial(P); });
+
 	RegisterCommand(TEXT("focus_viewport"),
 		TEXT("뷰포트 카메라를 액터에 포커스"), nullptr,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleFocusViewport(P); });
@@ -288,6 +293,36 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleGetActorProperties(const TSha
 	if (Actor->GetAttachParentActor())
 		Data->SetStringField(TEXT("parent"), Actor->GetAttachParentActor()->GetPathName());
 
+	// components (C++ CreateDefaultSubobject + BP 추가 컴포넌트 모두 포함)
+	TArray<UActorComponent*> Components;
+	Actor->GetComponents(Components);
+	TArray<TSharedPtr<FJsonValue>> CompArr;
+	for (UActorComponent* Comp : Components)
+	{
+		TSharedPtr<FJsonObject> CompObj = MakeShared<FJsonObject>();
+		CompObj->SetStringField(TEXT("name"), Comp->GetName());
+		CompObj->SetStringField(TEXT("class"), Comp->GetClass()->GetName());
+
+		if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(Comp))
+		{
+			CompObj->SetStringField(TEXT("static_mesh"),
+				SMC->GetStaticMesh() ? SMC->GetStaticMesh()->GetPathName() : TEXT("None"));
+		}
+
+		if (USceneComponent* SC = Cast<USceneComponent>(Comp))
+		{
+			FVector RelLoc = SC->GetRelativeLocation();
+			TArray<TSharedPtr<FJsonValue>> LocArr;
+			LocArr.Add(MakeShared<FJsonValueNumber>(RelLoc.X));
+			LocArr.Add(MakeShared<FJsonValueNumber>(RelLoc.Y));
+			LocArr.Add(MakeShared<FJsonValueNumber>(RelLoc.Z));
+			CompObj->SetArrayField(TEXT("relative_location"), LocArr);
+		}
+
+		CompArr.Add(MakeShared<FJsonValueObject>(CompObj));
+	}
+	Data->SetArrayField(TEXT("components"), CompArr);
+
 	return SuccessResponse(Data);
 }
 
@@ -352,15 +387,43 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSetActorProperty(const TShare
 	if (!BeginMutation(Actor, Params, MutError))
 		return ErrorResponse(TEXT("PERMISSION_DENIED"), MutError);
 
-	FProperty* Prop = Actor->GetClass()->FindPropertyByName(FName(*PropName));
+	// 점 표기법 지원: "ComponentName.PropertyName"
+	UObject* Target = Actor;
+	FString ResolvedPropName = PropName;
+
+	if (PropName.Contains(TEXT(".")))
+	{
+		FString CompName;
+		PropName.Split(TEXT("."), &CompName, &ResolvedPropName);
+
+		TArray<UActorComponent*> Components;
+		Actor->GetComponents(Components);
+		UActorComponent* FoundComp = nullptr;
+		for (UActorComponent* Comp : Components)
+		{
+			if (Comp->GetName() == CompName)
+			{
+				FoundComp = Comp;
+				break;
+			}
+		}
+		if (!FoundComp)
+			return ErrorResponse(TEXT("COMPONENT_NOT_FOUND"),
+				FString::Printf(TEXT("Component '%s' not found on '%s'"), *CompName, *Actor->GetActorLabel()));
+
+		FoundComp->Modify();
+		Target = FoundComp;
+	}
+
+	FProperty* Prop = Target->GetClass()->FindPropertyByName(FName(*ResolvedPropName));
 	if (!Prop)
 	{
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
-			FString::Printf(TEXT("Property '%s' not found on '%s'"), *PropName, *Actor->GetClass()->GetName()));
+			FString::Printf(TEXT("Property '%s' not found on '%s'"), *ResolvedPropName, *Target->GetClass()->GetName()));
 	}
 
 	TSharedPtr<FJsonValue> Value = Params->TryGetField(TEXT("value"));
-	void* PropAddr = Prop->ContainerPtrToValuePtr<void>(Actor);
+	void* PropAddr = Prop->ContainerPtrToValuePtr<void>(Target);
 
 	if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Prop))
 		BoolProp->SetPropertyValue(PropAddr, Value->AsBool());
@@ -711,6 +774,56 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSetActorTags(const TSharedPtr
 	Data->SetBoolField(TEXT("success"), true);
 	Data->SetStringField(TEXT("actor"), Actor->GetPathName());
 	Data->SetNumberField(TEXT("tag_count"), Actor->Tags.Num());
+	return SuccessResponse(Data);
+}
+
+TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleSetComponentMaterial(const TSharedPtr<FJsonObject>& Params)
+{
+	FString ActorRef, CompName, MatPath;
+	if (!Params || !Params->TryGetStringField(TEXT("actor_name"), ActorRef))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'actor_name' required"));
+	if (!Params->TryGetStringField(TEXT("component_name"), CompName))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'component_name' required"));
+	if (!Params->TryGetStringField(TEXT("material_path"), MatPath))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'material_path' required"));
+
+	int32 SlotIndex = 0;
+	if (Params->HasField(TEXT("slot_index")))
+		SlotIndex = static_cast<int32>(Params->GetNumberField(TEXT("slot_index")));
+
+	FString Error;
+	AActor* Actor = FindActorByRef(ActorRef, Error);
+	if (!Actor) return ErrorResponse(TEXT("ACTOR_NOT_FOUND"), Error);
+
+	TArray<UActorComponent*> Components;
+	Actor->GetComponents(Components);
+	UPrimitiveComponent* PrimComp = nullptr;
+	for (UActorComponent* Comp : Components)
+	{
+		if (Comp->GetName() == CompName)
+		{
+			PrimComp = Cast<UPrimitiveComponent>(Comp);
+			break;
+		}
+	}
+	if (!PrimComp)
+		return ErrorResponse(TEXT("COMPONENT_NOT_FOUND"),
+			FString::Printf(TEXT("PrimitiveComponent '%s' not found"), *CompName));
+
+	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, *MatPath);
+	if (!Mat)
+		return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
+			FString::Printf(TEXT("Material '%s' not found"), *MatPath));
+
+	FScopedTransaction Transaction(FText::FromString(TEXT("N1UnrealMCP: set_component_material")));
+	PrimComp->Modify();
+	PrimComp->SetMaterial(SlotIndex, Mat);
+
+	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+	Data->SetBoolField(TEXT("success"), true);
+	Data->SetStringField(TEXT("component"), CompName);
+	Data->SetStringField(TEXT("material"), MatPath);
+	Data->SetNumberField(TEXT("slot_index"), SlotIndex);
 	return SuccessResponse(Data);
 }
 

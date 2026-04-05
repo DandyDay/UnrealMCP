@@ -167,6 +167,20 @@ async def set_actor_tags(actor_name: str, tags: list[str]) -> str:
 
 
 @mcp.tool()
+async def set_component_material(
+    actor_name: str,
+    component_name: str,
+    material_path: str,
+    slot_index: int = 0,
+) -> str:
+    """액터 컴포넌트의 머티리얼 슬롯을 설정합니다."""
+    return await _cmd("set_component_material", {
+        "actor_name": actor_name, "component_name": component_name,
+        "material_path": material_path, "slot_index": slot_index,
+    })
+
+
+@mcp.tool()
 async def focus_viewport(actor_name: str) -> str:
     """뷰포트 카메라를 해당 액터에 포커스합니다."""
     return await _cmd("focus_viewport", {"actor_name": actor_name})

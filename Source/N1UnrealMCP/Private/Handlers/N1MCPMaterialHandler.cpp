@@ -476,6 +476,15 @@ TSharedPtr<FJsonObject> FN1MCPMaterialHandler::HandleSetMaterialExpressionParam(
 		NP->SetPropertyValue(PropAddr, FName(*Value->AsString()));
 	else if (FBoolProperty* BoolP = CastField<FBoolProperty>(Prop))
 		BoolP->SetPropertyValue(PropAddr, Value->AsBool());
+	else if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop))
+	{
+		FString AssetPath = Value->AsString();
+		UObject* LoadedObj = StaticLoadObject(ObjProp->PropertyClass, nullptr, *AssetPath);
+		if (!LoadedObj)
+			return ErrorResponse(TEXT("ASSET_NOT_FOUND"),
+				FString::Printf(TEXT("Asset '%s' not found"), *AssetPath));
+		ObjProp->SetObjectPropertyValue(PropAddr, LoadedObj);
+	}
 	else
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
 			FString::Printf(TEXT("Unsupported property type for '%s'"), *ParamName));

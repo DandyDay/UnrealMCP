@@ -30,6 +30,9 @@ private:
 	TSharedPtr<FJsonObject> HandleDetachActor(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleSetActorTags(const TSharedPtr<FJsonObject>& Params);
 
+	// 컴포넌트 머티리얼
+	TSharedPtr<FJsonObject> HandleSetComponentMaterial(const TSharedPtr<FJsonObject>& Params);
+
 	// 에디터 유틸
 	TSharedPtr<FJsonObject> HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
