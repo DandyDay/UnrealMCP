@@ -1,14 +1,7 @@
-import json
 from typing import Any
 
 from src.server import mcp
-from src.ue_connection import get_connection
-
-
-async def _cmd(command: str, params: dict[str, Any] | None = None, timeout_ms: int = 10000) -> str:
-    conn = get_connection()
-    result = await conn.send_command(command, params, timeout_ms)
-    return json.dumps(result, ensure_ascii=False)
+from src.tools._helpers import cmd as _cmd
 
 
 # ── 조회 ──

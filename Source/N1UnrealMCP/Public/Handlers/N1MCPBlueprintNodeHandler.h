@@ -34,7 +34,7 @@ private:
 	UBlueprint* FindBP(const FString& Path, FString& OutError);
 	UEdGraph* FindEventGraph(UBlueprint* BP);
 	UK2Node* FindNodeByGuid(UEdGraph* Graph, const FString& GuidStr);
-	TSharedPtr<FJsonObject> NodeToJson(UEdGraphNode* Node);
+	TSharedPtr<FJsonObject> NodeToJson(UEdGraphNode* Node, bool bIncludePins = true);
 	TSharedPtr<FJsonObject> PinToJson(UEdGraphPin* Pin);
 	FVector2D GetPosition(const TSharedPtr<FJsonObject>& Params);
 };

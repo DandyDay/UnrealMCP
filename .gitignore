@@ -28,3 +28,6 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Plugin tools state
+.omx/

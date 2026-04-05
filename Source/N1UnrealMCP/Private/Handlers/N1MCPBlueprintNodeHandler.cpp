@@ -86,7 +86,7 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::PinToJson(UEdGraphPin* Pin)
 	return Obj;
 }
 
-TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::NodeToJson(UEdGraphNode* Node)
+TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::NodeToJson(UEdGraphNode* Node, bool bIncludePins)
 {
 	TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
 	Obj->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
@@ -95,13 +95,24 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::NodeToJson(UEdGraphNode* Nod
 	Obj->SetNumberField(TEXT("x"), Node->NodePosX);
 	Obj->SetNumberField(TEXT("y"), Node->NodePosY);
 
-	TArray<TSharedPtr<FJsonValue>> PinsArr;
-	for (UEdGraphPin* Pin : Node->Pins)
+	if (bIncludePins)
 	{
-		if (!Pin->bHidden)
-			PinsArr.Add(MakeShared<FJsonValueObject>(PinToJson(Pin)));
+		TArray<TSharedPtr<FJsonValue>> PinsArr;
+		for (UEdGraphPin* Pin : Node->Pins)
+		{
+			if (!Pin->bHidden)
+				PinsArr.Add(MakeShared<FJsonValueObject>(PinToJson(Pin)));
+		}
+		Obj->SetArrayField(TEXT("pins"), PinsArr);
 	}
-	Obj->SetArrayField(TEXT("pins"), PinsArr);
+	else
+	{
+		// 핀 개수만 반환
+		int32 VisiblePins = 0;
+		for (UEdGraphPin* Pin : Node->Pins)
+			if (!Pin->bHidden) VisiblePins++;
+		Obj->SetNumberField(TEXT("pin_count"), VisiblePins);
+	}
 	return Obj;
 }
 
@@ -672,7 +683,7 @@ TSharedPtr<FJsonObject> FN1MCPBlueprintNodeHandler::HandleFindNodes(const TShare
 			if (!Title.Contains(Filter) && !ClassName.Contains(Filter))
 				continue;
 		}
-		AllNodes.Add(MakeShared<FJsonValueObject>(NodeToJson(Node)));
+		AllNodes.Add(MakeShared<FJsonValueObject>(NodeToJson(Node, false)));
 	}
 
 	TSharedPtr<FJsonObject> Data = FN1MCPCommandRegistry::ApplyPagination(AllNodes, Params);

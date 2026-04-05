@@ -108,34 +108,37 @@ void FN1MCPEditorHandler::RegisterCommands()
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleTakeScreenshot(P); });
 }
 
-TSharedPtr<FJsonObject> FN1MCPEditorHandler::ActorToJson(AActor* Actor)
+TSharedPtr<FJsonObject> FN1MCPEditorHandler::ActorToJson(AActor* Actor, bool bDetailed)
 {
 	TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
 	Obj->SetStringField(TEXT("display_name"), Actor->GetActorLabel());
 	Obj->SetStringField(TEXT("object_path"), Actor->GetPathName());
 	Obj->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
 
-	FVector Loc = Actor->GetActorLocation();
-	FRotator Rot = Actor->GetActorRotation();
-	FVector Scale = Actor->GetActorScale3D();
+	if (bDetailed)
+	{
+		FVector Loc = Actor->GetActorLocation();
+		FRotator Rot = Actor->GetActorRotation();
+		FVector Scale = Actor->GetActorScale3D();
 
-	TArray<TSharedPtr<FJsonValue>> LocArr;
-	LocArr.Add(MakeShared<FJsonValueNumber>(Loc.X));
-	LocArr.Add(MakeShared<FJsonValueNumber>(Loc.Y));
-	LocArr.Add(MakeShared<FJsonValueNumber>(Loc.Z));
-	Obj->SetArrayField(TEXT("location"), LocArr);
+		TArray<TSharedPtr<FJsonValue>> LocArr;
+		LocArr.Add(MakeShared<FJsonValueNumber>(Loc.X));
+		LocArr.Add(MakeShared<FJsonValueNumber>(Loc.Y));
+		LocArr.Add(MakeShared<FJsonValueNumber>(Loc.Z));
+		Obj->SetArrayField(TEXT("location"), LocArr);
 
-	TArray<TSharedPtr<FJsonValue>> RotArr;
-	RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Pitch));
-	RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Yaw));
-	RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Roll));
-	Obj->SetArrayField(TEXT("rotation"), RotArr);
+		TArray<TSharedPtr<FJsonValue>> RotArr;
+		RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Pitch));
+		RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Yaw));
+		RotArr.Add(MakeShared<FJsonValueNumber>(Rot.Roll));
+		Obj->SetArrayField(TEXT("rotation"), RotArr);
 
-	TArray<TSharedPtr<FJsonValue>> ScaleArr;
-	ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.X));
-	ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Y));
-	ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Z));
-	Obj->SetArrayField(TEXT("scale"), ScaleArr);
+		TArray<TSharedPtr<FJsonValue>> ScaleArr;
+		ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.X));
+		ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Y));
+		ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Z));
+		Obj->SetArrayField(TEXT("scale"), ScaleArr);
+	}
 
 	return Obj;
 }
@@ -154,6 +157,12 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleGetActorsInLevel(const TShare
 		Params->TryGetStringField(TEXT("tag_filter"), TagFilter);
 	}
 
+	// detail 옵션: "full"이면 transform 포함, 기본은 summary (이름+클래스만)
+	FString Detail;
+	bool bDetailed = false;
+	if (Params.IsValid() && Params->TryGetStringField(TEXT("detail"), Detail))
+		bDetailed = (Detail == TEXT("full"));
+
 	TArray<TSharedPtr<FJsonValue>> AllActors;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
@@ -163,7 +172,7 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleGetActorsInLevel(const TShare
 		if (!TagFilter.IsEmpty() && !Actor->Tags.ContainsByPredicate(
 			[&](const FName& Tag) { return Tag.ToString() == TagFilter; }))
 			continue;
-		AllActors.Add(MakeShared<FJsonValueObject>(ActorToJson(Actor)));
+		AllActors.Add(MakeShared<FJsonValueObject>(ActorToJson(Actor, bDetailed)));
 	}
 
 	TSharedPtr<FJsonObject> Data = FN1MCPCommandRegistry::ApplyPagination(AllActors, Params);
@@ -188,6 +197,11 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleFindActorsByName(const TShare
 		return ErrorResponse(TEXT("INVALID_PARAMS"),
 			TEXT("At least one filter required: 'pattern', 'class_filter', or 'tag_filter'"));
 
+	FString Detail;
+	bool bDetailed = false;
+	if (Params.IsValid() && Params->TryGetStringField(TEXT("detail"), Detail))
+		bDetailed = (Detail == TEXT("full"));
+
 	TArray<TSharedPtr<FJsonValue>> AllActors;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
@@ -207,7 +221,7 @@ TSharedPtr<FJsonObject> FN1MCPEditorHandler::HandleFindActorsByName(const TShare
 				[&](const FName& Tag) { return Tag.ToString().Contains(TagFilter); }))
 			continue;
 
-		AllActors.Add(MakeShared<FJsonValueObject>(ActorToJson(Actor)));
+		AllActors.Add(MakeShared<FJsonValueObject>(ActorToJson(Actor, bDetailed)));
 	}
 
 	TSharedPtr<FJsonObject> Data = FN1MCPCommandRegistry::ApplyPagination(AllActors, Params);

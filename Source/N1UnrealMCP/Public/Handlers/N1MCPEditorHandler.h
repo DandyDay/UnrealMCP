@@ -35,5 +35,5 @@ private:
 	TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
 
 	// 액터를 JSON으로 직렬화
-	TSharedPtr<FJsonObject> ActorToJson(AActor* Actor);
+	TSharedPtr<FJsonObject> ActorToJson(AActor* Actor, bool bDetailed = true);
 };
