@@ -39,6 +39,9 @@ public class N1UnrealMCP : ModuleRules
             "BlueprintEditorLibrary",
             "UMGEditor",
             "Landscape",
+            "LandscapeEditor",
+            "Foliage",
+            "ImageWrapper",
             "EnhancedInput",
             "EngineSettings"
         });
