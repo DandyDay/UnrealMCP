@@ -21,11 +21,6 @@ FN1MCPDataHandler::FN1MCPDataHandler(FN1MCPCommandRegistry& InRegistry)
 
 void FN1MCPDataHandler::RegisterCommands()
 {
-	RegisterCommand(TEXT("create_data_table"),
-		TEXT("DataTable 에셋 생성"), nullptr,
-		true, false, false, 10000,
-		[this](const TSharedPtr<FJsonObject>& P) { return HandleCreateDataTable(P); });
-
 	RegisterCommand(TEXT("get_data_table_rows"),
 		TEXT("DataTable 행 데이터 조회"), nullptr,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleGetDataTableRows(P); });
@@ -53,11 +48,6 @@ void FN1MCPDataHandler::RegisterCommands()
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleGetDataAssetProperties(P); });
 
 	// Curve (CurveFloat, CurveLinearColor, CurveVector)
-	RegisterCommand(TEXT("create_curve"),
-		TEXT("커브 에셋 생성 (CurveFloat, CurveLinearColor, CurveVector)"), nullptr,
-		true, false, false, 10000,
-		[this](const TSharedPtr<FJsonObject>& P) { return HandleCreateCurve(P); });
-
 	RegisterCommand(TEXT("get_curve_keys"),
 		TEXT("커브 키 데이터 조회"), nullptr,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleGetCurveKeys(P); });
@@ -66,49 +56,6 @@ void FN1MCPDataHandler::RegisterCommands()
 		TEXT("커브에 키 데이터 일괄 설정"), nullptr,
 		true, false, false, 10000,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleSetCurveKeys(P); });
-}
-
-TSharedPtr<FJsonObject> FN1MCPDataHandler::HandleCreateDataTable(const TSharedPtr<FJsonObject>& Params)
-{
-	FString Name, RowStructName;
-	if (!Params || !Params->TryGetStringField(TEXT("name"), Name))
-		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'name' required"));
-	if (!Params->TryGetStringField(TEXT("row_struct"), RowStructName))
-		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'row_struct' required"));
-
-	UScriptStruct* RowStruct = FindObject<UScriptStruct>(nullptr, *RowStructName);
-	if (!RowStruct)
-	{
-		FString FullPath = FString::Printf(TEXT("/Script/Engine.%s"), *RowStructName);
-		RowStruct = FindObject<UScriptStruct>(nullptr, *FullPath);
-	}
-	if (!RowStruct)
-		return ErrorResponse(TEXT("INVALID_PARAMS"),
-			FString::Printf(TEXT("Row struct '%s' not found"), *RowStructName));
-
-	FString Path = TEXT("/Game/Data");
-	Params->TryGetStringField(TEXT("path"), Path);
-
-	FString PackagePath = Path / Name;
-	UPackage* Package = CreatePackage(*PackagePath);
-
-	UDataTableFactory* Factory = NewObject<UDataTableFactory>();
-	Factory->Struct = RowStruct;
-
-	UObject* Asset = Factory->FactoryCreateNew(UDataTable::StaticClass(), Package,
-		FName(*Name), RF_Public | RF_Standalone, nullptr, GWarn);
-
-	UDataTable* DT = Cast<UDataTable>(Asset);
-	if (!DT)
-		return ErrorResponse(TEXT("INTERNAL_ERROR"), TEXT("Failed to create data table"));
-
-	FAssetRegistryModule::AssetCreated(DT);
-	DT->MarkPackageDirty();
-
-	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
-	Data->SetStringField(TEXT("asset_path"), DT->GetPathName());
-	Data->SetStringField(TEXT("row_struct"), RowStruct->GetName());
-	return SuccessResponse(Data);
 }
 
 TSharedPtr<FJsonObject> FN1MCPDataHandler::HandleGetDataTableRows(const TSharedPtr<FJsonObject>& Params)
@@ -384,54 +331,6 @@ static void JsonKeysToRichCurve(FRichCurve& Curve, const TArray<TSharedPtr<FJson
 			Key.LeaveTangent = static_cast<float>(K->GetNumberField(TEXT("leave_tangent")));
 		}
 	}
-}
-
-TSharedPtr<FJsonObject> FN1MCPDataHandler::HandleCreateCurve(const TSharedPtr<FJsonObject>& Params)
-{
-	FString Name, CurveType;
-	if (!Params || !Params->TryGetStringField(TEXT("name"), Name))
-		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'name' required"));
-	if (!Params->TryGetStringField(TEXT("curve_type"), CurveType))
-		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'curve_type' required (CurveFloat, CurveLinearColor, CurveVector)"));
-
-	FString Path = TEXT("/Game/Data");
-	Params->TryGetStringField(TEXT("path"), Path);
-
-	FString PackagePath = Path / Name;
-	UPackage* Package = CreatePackage(*PackagePath);
-
-	UObject* Asset = nullptr;
-
-	if (CurveType == TEXT("CurveFloat") || CurveType == TEXT("Float"))
-	{
-		UCurveFloat* Curve = NewObject<UCurveFloat>(Package, FName(*Name), RF_Public | RF_Standalone);
-		Asset = Curve;
-	}
-	else if (CurveType == TEXT("CurveLinearColor") || CurveType == TEXT("LinearColor") || CurveType == TEXT("Color"))
-	{
-		UCurveLinearColor* Curve = NewObject<UCurveLinearColor>(Package, FName(*Name), RF_Public | RF_Standalone);
-		Asset = Curve;
-	}
-	else if (CurveType == TEXT("CurveVector") || CurveType == TEXT("Vector"))
-	{
-		UCurveVector* Curve = NewObject<UCurveVector>(Package, FName(*Name), RF_Public | RF_Standalone);
-		Asset = Curve;
-	}
-	else
-	{
-		return ErrorResponse(TEXT("INVALID_PARAMS"),
-			FString::Printf(TEXT("Unknown curve_type: '%s'"), *CurveType));
-	}
-
-	if (!Asset) return ErrorResponse(TEXT("INTERNAL_ERROR"), TEXT("Failed to create curve"));
-
-	FAssetRegistryModule::AssetCreated(Asset);
-	Asset->MarkPackageDirty();
-
-	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
-	Data->SetStringField(TEXT("asset_path"), Asset->GetPathName());
-	Data->SetStringField(TEXT("class"), Asset->GetClass()->GetName());
-	return SuccessResponse(Data);
 }
 
 TSharedPtr<FJsonObject> FN1MCPDataHandler::HandleGetCurveKeys(const TSharedPtr<FJsonObject>& Params)

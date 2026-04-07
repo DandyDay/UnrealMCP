@@ -5,6 +5,22 @@ from src.tools._helpers import cmd as _cmd
 
 
 @mcp.tool()
+async def create_asset(
+    class_name: str,
+    name: str,
+    path: str | None = None,
+    properties: dict | None = None,
+) -> str:
+    """범용 에셋 생성. class_name 예: InputAction, InputMappingContext, DataTable, CurveFloat, DataAsset"""
+    params: dict[str, Any] = {"class_name": class_name, "name": name}
+    if path:
+        params["path"] = path
+    if properties:
+        params["properties"] = properties
+    return await _cmd("create_asset", params)
+
+
+@mcp.tool()
 async def find_assets(
     search_path: str | None = None,
     class_filter: str | None = None,

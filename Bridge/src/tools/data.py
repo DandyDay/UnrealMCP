@@ -5,14 +5,6 @@ from src.tools._helpers import cmd as _cmd
 
 
 @mcp.tool()
-async def create_data_table(name: str, row_struct: str, path: str | None = None) -> str:
-    """DataTable 에셋을 생성합니다. row_struct: 행 구조체 이름"""
-    params: dict[str, Any] = {"name": name, "row_struct": row_struct}
-    if path: params["path"] = path
-    return await _cmd("create_data_table", params)
-
-
-@mcp.tool()
 async def get_data_table_rows(data_table_path: str, limit: int = 100, offset: int = 0) -> str:
     """DataTable의 행 데이터를 조회합니다."""
     return await _cmd("get_data_table_rows", {
@@ -52,14 +44,6 @@ async def get_curve_table_info(curve_table_path: str) -> str:
 async def get_data_asset_properties(asset_path: str) -> str:
     """DataAsset의 속성을 조회합니다."""
     return await _cmd("get_data_asset_properties", {"asset_path": asset_path})
-
-
-@mcp.tool()
-async def create_curve(name: str, curve_type: str, path: str | None = None) -> str:
-    """커브 에셋을 생성합니다. curve_type: CurveFloat, CurveLinearColor, CurveVector"""
-    params: dict[str, Any] = {"name": name, "curve_type": curve_type}
-    if path: params["path"] = path
-    return await _cmd("create_curve", params)
 
 
 @mcp.tool()

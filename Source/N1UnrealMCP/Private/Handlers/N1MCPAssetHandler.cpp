@@ -11,6 +11,8 @@
 #include "FileHelpers.h"
 #include "PackageTools.h"
 #include "UObject/SavePackage.h"
+#include "Factories/Factory.h"
+#include "Factories/DataTableFactory.h"
 
 FN1MCPAssetHandler::FN1MCPAssetHandler(FN1MCPCommandRegistry& InRegistry)
 	: FN1MCPHandlerBase(InRegistry, TEXT("asset"))
@@ -19,6 +21,11 @@ FN1MCPAssetHandler::FN1MCPAssetHandler(FN1MCPCommandRegistry& InRegistry)
 
 void FN1MCPAssetHandler::RegisterCommands()
 {
+	RegisterCommand(TEXT("create_asset"),
+		TEXT("범용 에셋 생성 (InputAction, DataTable, CurveFloat 등)"), nullptr,
+		true, false, false, 10000,
+		[this](const TSharedPtr<FJsonObject>& P) { return HandleCreateAsset(P); });
+
 	RegisterCommand(TEXT("find_assets"),
 		TEXT("AssetRegistry로 에셋 검색"), nullptr,
 		[this](const TSharedPtr<FJsonObject>& P) { return HandleFindAssets(P); });
@@ -333,5 +340,179 @@ TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleDuplicateAsset(const TSharedPt
 	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
 	Data->SetStringField(TEXT("new_asset_path"), NewAsset->GetPathName());
 	Data->SetStringField(TEXT("class"), NewAsset->GetClass()->GetName());
+	return SuccessResponse(Data);
+}
+
+TSharedPtr<FJsonObject> FN1MCPAssetHandler::HandleCreateAsset(const TSharedPtr<FJsonObject>& Params)
+{
+	FString ClassName, Name;
+	if (!Params || !Params->TryGetStringField(TEXT("class_name"), ClassName))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'class_name' required"));
+	if (!Params->TryGetStringField(TEXT("name"), Name))
+		return ErrorResponse(TEXT("INVALID_PARAMS"), TEXT("'name' required"));
+
+	// 1. UClass 해석 (접두어 U 없이도 동작)
+	UClass* AssetClass = FindFirstObject<UClass>(*ClassName, EFindFirstObjectOptions::NativeFirst);
+	if (!AssetClass)
+		AssetClass = FindFirstObject<UClass>(*(FString(TEXT("U")) + ClassName), EFindFirstObjectOptions::NativeFirst);
+	if (!AssetClass)
+		return ErrorResponse(TEXT("CLASS_NOT_FOUND"),
+			FString::Printf(TEXT("UClass '%s' not found"), *ClassName));
+
+	// 2. 패키지 경로
+	FString Path = TEXT("/Game");
+	Params->TryGetStringField(TEXT("path"), Path);
+	FString PackagePath = Path / Name;
+	UPackage* Package = CreatePackage(*PackagePath);
+
+	// 3. Factory 자동 탐색 (특수 케이스 우선, 이후 자동 검색)
+	UFactory* Factory = nullptr;
+	if (AssetClass == UDataTable::StaticClass())
+	{
+		Factory = NewObject<UDataTableFactory>();
+	}
+	else
+	{
+		for (TObjectIterator<UClass> It; It; ++It)
+		{
+			if (It->IsChildOf(UFactory::StaticClass()) && !It->HasAnyClassFlags(CLASS_Abstract))
+			{
+				UFactory* CDO = Cast<UFactory>(It->GetDefaultObject());
+				if (CDO && CDO->SupportedClass == AssetClass && CDO->CanCreateNew())
+				{
+					Factory = NewObject<UFactory>(GetTransientPackage(), *It);
+					break;
+				}
+			}
+		}
+	}
+
+	// 4. Factory 선행 설정 (특수 케이스)
+	const TSharedPtr<FJsonObject>* PropertiesPtr = nullptr;
+	Params->TryGetObjectField(TEXT("properties"), PropertiesPtr);
+
+	if (UDataTableFactory* DTFactory = Cast<UDataTableFactory>(Factory))
+	{
+		FString RowStructName;
+		if (PropertiesPtr && (*PropertiesPtr)->TryGetStringField(TEXT("row_struct"), RowStructName))
+		{
+			UScriptStruct* RowStruct = FindFirstObject<UScriptStruct>(*RowStructName, EFindFirstObjectOptions::NativeFirst);
+			if (!RowStruct)
+			{
+				FString FullPath = FString::Printf(TEXT("/Script/Engine.%s"), *RowStructName);
+				RowStruct = FindObject<UScriptStruct>(nullptr, *FullPath);
+			}
+			if (RowStruct)
+				DTFactory->Struct = RowStruct;
+			else
+				return ErrorResponse(TEXT("INVALID_PARAMS"),
+					FString::Printf(TEXT("Row struct '%s' not found"), *RowStructName));
+		}
+		else
+		{
+			return ErrorResponse(TEXT("INVALID_PARAMS"),
+				TEXT("DataTable requires 'row_struct' in properties"));
+		}
+	}
+
+	// 5. 에셋 생성
+	FScopedTransaction Transaction(FText::FromString(TEXT("N1UnrealMCP: create_asset")));
+
+	UObject* Asset = nullptr;
+	if (Factory)
+	{
+		Asset = Factory->FactoryCreateNew(
+			AssetClass, Package, FName(*Name),
+			RF_Public | RF_Standalone, nullptr, GWarn);
+	}
+	else
+	{
+		Asset = NewObject<UObject>(Package, AssetClass, FName(*Name),
+			RF_Public | RF_Standalone);
+	}
+
+	if (!Asset)
+		return ErrorResponse(TEXT("CREATION_FAILED"),
+			FString::Printf(TEXT("Failed to create asset of class '%s'"), *ClassName));
+
+	// 6. 프로퍼티 설정
+	TArray<FString> PropertyWarnings;
+	if (PropertiesPtr)
+	{
+		for (const auto& Pair : (*PropertiesPtr)->Values)
+		{
+			if (Pair.Key == TEXT("row_struct")) continue;
+
+			FProperty* Prop = AssetClass->FindPropertyByName(FName(*Pair.Key));
+			if (!Prop)
+			{
+				PropertyWarnings.Add(FString::Printf(TEXT("Property '%s' not found on %s"), *Pair.Key, *ClassName));
+				continue;
+			}
+
+			void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Asset);
+
+			if (Pair.Value->Type == EJson::String)
+			{
+				FString StrVal = Pair.Value->AsString();
+				if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+					StrProp->SetPropertyValue(ValuePtr, StrVal);
+				else if (FNameProperty* NameProp = CastField<FNameProperty>(Prop))
+					NameProp->SetPropertyValue(ValuePtr, FName(*StrVal));
+				else if (FTextProperty* TextProp = CastField<FTextProperty>(Prop))
+					TextProp->SetPropertyValue(ValuePtr, FText::FromString(StrVal));
+				else if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Prop))
+				{
+					UEnum* Enum = EnumProp->GetEnum();
+					int64 EnumVal = Enum->GetValueByNameString(StrVal);
+					if (EnumVal != INDEX_NONE)
+						EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumVal);
+				}
+				else if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop))
+				{
+					UObject* Ref = LoadObject<UObject>(nullptr, *StrVal);
+					if (Ref) ObjProp->SetObjectPropertyValue(ValuePtr, Ref);
+				}
+				else
+				{
+					Prop->ImportText_Direct(*StrVal, ValuePtr, Asset, PPF_None);
+				}
+			}
+			else if (Pair.Value->Type == EJson::Number)
+			{
+				double NumVal = Pair.Value->AsNumber();
+				if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop))
+					FloatProp->SetPropertyValue(ValuePtr, (float)NumVal);
+				else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Prop))
+					DoubleProp->SetPropertyValue(ValuePtr, NumVal);
+				else if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+					IntProp->SetPropertyValue(ValuePtr, (int32)NumVal);
+			}
+			else if (Pair.Value->Type == EJson::Boolean)
+			{
+				if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Prop))
+					BoolProp->SetPropertyValue(ValuePtr, Pair.Value->AsBool());
+			}
+		}
+	}
+
+	// 7. 등록
+	FAssetRegistryModule::AssetCreated(Asset);
+	Package->MarkPackageDirty();
+
+	// 8. 응답
+	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+	Data->SetStringField(TEXT("asset_path"), Asset->GetPathName());
+	Data->SetStringField(TEXT("class"), AssetClass->GetName());
+	Data->SetBoolField(TEXT("factory_used"), Factory != nullptr);
+
+	if (PropertyWarnings.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Warnings;
+		for (const FString& W : PropertyWarnings)
+			Warnings.Add(MakeShared<FJsonValueString>(W));
+		Data->SetArrayField(TEXT("property_warnings"), Warnings);
+	}
+
 	return SuccessResponse(Data);
 }

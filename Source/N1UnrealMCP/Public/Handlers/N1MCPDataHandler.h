@@ -11,7 +11,6 @@ public:
 
 private:
 	// DataTable
-	TSharedPtr<FJsonObject> HandleCreateDataTable(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleGetDataTableRows(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleGetDataTableRowNames(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleAddDataTableRow(const TSharedPtr<FJsonObject>& Params);
@@ -21,7 +20,6 @@ private:
 	TSharedPtr<FJsonObject> HandleGetCurveTableInfo(const TSharedPtr<FJsonObject>& Params);
 
 	// Curve (CurveFloat, CurveLinearColor, CurveVector)
-	TSharedPtr<FJsonObject> HandleCreateCurve(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleGetCurveKeys(const TSharedPtr<FJsonObject>& Params);
 	TSharedPtr<FJsonObject> HandleSetCurveKeys(const TSharedPtr<FJsonObject>& Params);
 
